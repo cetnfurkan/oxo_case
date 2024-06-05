@@ -7,6 +7,11 @@ services:
       - "${PORT}:${PORT}"
     environment:
       - PORT=${PORT}
+      - RABBIT_SCHEMA=${RABBIT_SCHEMA}
+      - RABBIT_USER=${RABBIT_USER}
+      - RABBIT_PASSWORD=${RABBIT_PASSWORD}
+      - RABBIT_HOST=${RABBIT_HOST}
+      - RABBIT_PORT=${RABBIT_PORT}
       - REDIS_SCHEME=${REDIS_SCHEME}
       - REDIS_HOST=redis
       - REDIS_PORT=${REDIS_PORT}
@@ -28,6 +33,7 @@ services:
       - redis
       - mongodb
       - postgres
+      - rabbitmq
 
   redis:
     image: redis:latest
@@ -41,6 +47,15 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_USER}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_PASSWORD}
+  
+  rabbitmq:
+    image: rabbitmq:management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBIT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBIT_PASSWORD}
 
   postgres:
     image: postgres:latest
