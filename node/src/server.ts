@@ -1,11 +1,16 @@
 import http from 'http';
 import app from './app';
-import saveApkDetails from './services/apkService';
 import { Server } from 'socket.io';
 import cron from 'node-cron';
 import config = require('./config/config');
-import redisClient from './config/redis';
+import { connectRedis } from './config/redis';
+import { connectRabbitMQ } from './config/rabbitmq';
+import { connectMongoDB, connectPostgres } from './config/db';
 import cors from 'cors';
+import publishToQueue from './mq/publisher';
+import consumeQueue from './mq/consumer';
+import processMessage from './utils/messageProcessor';
+import Apk from './models/Apk';
 
 const port = process.env.PORT || 3010;
 const server = http.createServer(app);
@@ -23,9 +28,9 @@ io.on('connection', (socket) => {
 /**
  * @name notifyClients
  * @description Sends APK update notifications to all connected WebSocket clients.
- * @param {any} apkDetails - The details of the updated APK.
+ * @param {Apk[]} apkDetails - The details of the updated APK.
  */
-function notifyClients(apkDetails: any) {
+export function notifyClients(apkDetails: Apk[]) {
   io.emit('apkUpdate', apkDetails);
 }
 
@@ -34,26 +39,49 @@ app.use(cors({
 }));
 
 /**
- * @name server.listen
- * @description Starts the HTTP server and sets the server status in Redis.
- * @param {number} port - The port on which the server will listen.
+ * @name main
+ * @description Initializes necessary connections and starts the server.
+ * @returns {Promise<void>}
  */
-server.listen(port, () => {
-  console.log(`Server is running on port ${port}`);
-  redisClient.set('serverStatus', 'running');
-});
+async function main(): Promise<void> {
+  try {
 
-/**
- * @name cron.schedule
- * @description Schedules a task to fetch and save APK details every 2 minutes.
- */
-cron.schedule('*/2 * * * *', async () => {
-  const tasks = config.default.map(({ org, repo }) => 
-    (async () => {
-      const apkDetails = await saveApkDetails(org, repo);
-      notifyClients(apkDetails);
-    })()
-  );
-  
-  await Promise.all(tasks);
-});
+    // Redis bağlantısını başlat
+    const redisClient = await connectRedis();
+    
+    // RabbitMQ bağlantısını başlat
+    const channel = await connectRabbitMQ();
+
+    // MongoDB ve PostgreSQL bağlantılarını başlat
+    await connectMongoDB();
+    await connectPostgres();
+
+    // Sunucuyu başlat
+    server.listen(port, () => {
+      console.log(`Server is running on port ${port}`);
+      redisClient.set('serverStatus', 'running');
+    });
+
+    // // RabbitMQ kuyruklarını tüket
+    consumeQueue(channel, 'apkQueue', '', 'apkQueue_fail', (channel, msg) => processMessage(redisClient, channel, msg, false, notifyClients));
+    consumeQueue(channel, 'apkQueue_fail_retry', '', undefined, (channel, msg) => {
+      publishToQueue(channel, 'apkQueue', msg!.content?.toString());
+      channel.ack(msg!);
+    });
+
+    cron.schedule('*/2 * * * *', async () => {
+      const tasks = config.default.map(({ org, repo }) =>
+        (async () => {
+          await publishToQueue(channel, 'apkQueue', JSON.stringify({ org, repo }));
+        })()
+      );
+      await Promise.all(tasks);
+    });
+  } catch (error) {
+    console.error('Failed to initialize the server:', error);
+    process.exit(1); // Hata durumunda uygulamayı sonlandır
+  }
+}
+
+// main fonksiyonunu çağır
+main();

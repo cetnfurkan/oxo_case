@@ -1,27 +1,50 @@
-import { createClient } from 'redis';
-require('dotenv').config();
+import { createClient, RedisClientType } from 'redis';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const {
   REDIS_HOST, REDIS_USER, REDIS_PASSWORD, REDIS_PORT, REDIS_SCHEME,
 } = process.env;
 
 /**
- * @name redisClient
+ * @name createRedisClient
  * @description Creates and configures a Redis client using environment variables.
+ * @returns {RedisClientType}
  */
-const redisClient = createClient({
-  url: `${REDIS_SCHEME}://${REDIS_USER}:${REDIS_PASSWORD}@${REDIS_HOST}:${REDIS_PORT}`,
-  username: REDIS_USER,
-});
+function createRedisClient(): RedisClientType {
+  return createClient({
+    url: `${REDIS_SCHEME}://${REDIS_USER}:${REDIS_PASSWORD}@${REDIS_HOST}:${REDIS_PORT}`,
+    username: REDIS_USER,
+  });
+}
 
-redisClient.on('connect', () => {
-  console.log('Connected to Redis');
-});
+/**
+ * @name connectRedis
+ * @description Connects to Redis and handles connection events.
+ * @returns {Promise<RedisClientType>}
+ */
+async function connectRedis(): Promise<RedisClientType> {
+  const redisClient = createRedisClient();
 
-redisClient.on('error', (err) => {
-  console.error('Redis error:', err);
-});
+  return new Promise<RedisClientType>((resolve, reject) => {
+    redisClient.on('connect', () => {
+      console.log('Connected to Redis');
+      resolve(redisClient);
+    });
 
-redisClient.connect().catch(console.error);
+    redisClient.on('error', (err) => {
+      console.error('Redis error:', err);
+      reject(err);
+    });
 
-export default redisClient;
+    redisClient.connect().catch((err) => {
+      console.error('Error connecting to Redis:', err);
+      reject(err);
+    });
+
+    (global as any).redisClient = redisClient;
+  });
+}
+
+export { connectRedis };

@@ -5,32 +5,56 @@ import { Client } from 'pg';
 const { MONGO_SCHEME, MONGO_HOST, MONGO_PORT, MONGO_USER, MONGO_PASSWORD, MONGO_DB } = process.env;
 
 /**
- * @name mongoose
+ * @name connectMongoDB
  * @description Establishes a connection to MongoDB using environment variables.
+ * @returns {Promise<void>}
  */
-mongoose.connect(
-  MONGO_USER && MONGO_PASSWORD ? `${MONGO_SCHEME}://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB}` : `${MONGO_SCHEME}://${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB}`,
-);
+async function connectMongoDB(): Promise<void> {
+  const mongoUri = MONGO_USER && MONGO_PASSWORD
+    ? `${MONGO_SCHEME}://${MONGO_USER}:${MONGO_PASSWORD}@${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB}`
+    : `${MONGO_SCHEME}://${MONGO_HOST}:${MONGO_PORT}/${MONGO_DB}`;
 
-mongoose.connection.on('connected', () => {
-  console.log('MongoDB connected');
-});
+  return new Promise((resolve, reject) => {
+    mongoose.connect(mongoUri);
+    mongoose.connection.on('connected', () => {
+      console.log('MongoDB connected');
+      resolve();
+    });
+    mongoose.connection.on('error', (err) => {
+      console.error('MongoDB connection error:', err);
+      reject(err);
+    });
+  });
+}
 
 const { DB_USER, DB_PASSWORD, DB_HOST, DB_PORT, DB_NAME } = process.env;
 
-
 /**
- * @name pgClient
+ * @name connectPostgres
  * @description Establishes a connection to PostgreSQL using environment variables.
+ * @returns {Promise<Client>}
  */
-const pgClient = new Client({
-  user: DB_USER,
-  password: DB_PASSWORD,
-  host: DB_HOST,
-  port: Number(DB_PORT),
-  database: DB_NAME,
-});
+async function connectPostgres(): Promise<Client> {
+  const pgClient = new Client({
+    user: DB_USER,
+    password: DB_PASSWORD,
+    host: DB_HOST,
+    port: Number(DB_PORT),
+    database: DB_NAME,
+  });
 
-pgClient.connect();
+  return new Promise((resolve, reject) => {
+    pgClient.connect(err => {
+      if (err) {
+        console.error('PostgreSQL connection error:', err);
+        reject(err);
+      } else {
+        console.log('PostgreSQL connected');
+        (global as any).pgClient = pgClient; // Global değişkene kaydet
+        resolve(pgClient);
+      }
+    });
+  });
+}
 
-export { mongoose, pgClient };
+export { connectMongoDB, connectPostgres };

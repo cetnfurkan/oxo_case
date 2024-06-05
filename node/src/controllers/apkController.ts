@@ -1,7 +1,5 @@
 import { Request, Response } from 'express';
 import Apk from '../models/Apk';
-import { pgClient } from '../config/db';
-import redisClient from '../config/redis';
 import UserAgent from 'ua-parser-js';
 
 /**
@@ -41,11 +39,12 @@ async function deleteVersion(req: Request, res: Response) {
 
   const { version } = apk;
 
+  const pgClient = (global as any).pgClient;
   // PostgreSQL'den sil
   await pgClient.query('DELETE FROM apk_miror.apk_distributions WHERE version = $1', [version]);
 
   // Redis'ten sil
-  await redisClient.del(version);
+  await (global as any).redisClient.del(version);
 
   res.sendStatus(204);
 }
